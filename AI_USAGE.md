@@ -1,11 +1,30 @@
-# AI Usage
+# AI Usage Record
 
-1. Ask: compare the existing project with the assessment requirements. Result: identified missing frontend, tests, evidence docs, detail authorization, and race-safe duplicate handling. Accepted after code review.
-2. Ask: improve service-layer workflow safety. Result: transaction-scoped audit writes, role checks, and unique-constraint recovery. Accepted; PostgreSQL-specific recovery is intentional because this project uses Npgsql.
-3. Ask: create a minimal local workflow UI. Result: vanilla HTML/JS to avoid unnecessary client build complexity. Accepted after reviewing that every sensitive action is still server-authorized.
+This is a working record. Before submission, the candidate must check it reflects their own interactions and decisions.
+
+## 1. Requirements gap analysis
+
+- **Ask:** Compare the existing project with the complete assessment brief.
+- **Suggestion:** Add the missing frontend, automated tests, evidence documents, detail authorization, and race-safe idempotency.
+- **Decision:** Accepted after review because each item appears in the Phase 1 brief and closes a concrete gap.
+- **Why:** The API-generation prompt did not include all PDF requirements.
+
+## 2. Workflow safety review
+
+- **Ask:** Review service-layer workflow safety and concurrency.
+- **Suggestion:** Save state and audit changes together, check `xmin`/Version for stale actions, and recover duplicate creation using the unique database constraint.
+- **Decision:** Accepted; PostgreSQL-specific duplicate detection was retained deliberately.
+- **Why:** A simple application-level pre-check cannot safely handle concurrent submission or approval.
+
+## 3. Frontend scope
+
+- **Ask:** Create a minimal frontend for the critical access-request flow.
+- **Suggestion:** Use a Razor MVC view with small browser-side JavaScript instead of a separate SPA build system.
+- **Decision:** Accepted after confirming the frontend does not make authorization decisions; the API is still the security boundary.
+- **Why:** It covers user switcher, create, inbox, detail, audit, and error states within the assessment timebox.
 
 ## Three things AI got wrong
 
-1. It initially treated the API prompt as the full assessment; the PDF adds mandatory frontend, test, documentation, and Git evidence.
-2. It initially allowed any seeded user to read a request detail; this is now restricted to requester, relevant manager/owner, or auditor.
-3. A pre-check alone is not safe idempotency. The unique database index and duplicate-key recovery are required for concurrent submissions.
+1. It initially treated the API prompt as the full assessment; the PDF also requires frontend, tests, documentation, and Git evidence.
+2. It initially allowed any seeded user to retrieve request detail. The code was changed to enforce server-side read authorization.
+3. It initially relied on an idempotency pre-check. The final design also uses the database unique constraint to survive a duplicate-submit race.

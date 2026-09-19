@@ -1,11 +1,23 @@
-# Self-review
+# Production-readiness self-review
 
 | Finding | Severity | Action | Status | Evidence |
 |---|---|---|---|---|
-| Committed database password | High | Replaced with a placeholder; document environment configuration | Fixed | `appsettings.json`, README |
-| Duplicate create race | High | Unique index plus `23505` recovery | Fixed | migration and `RequestService` |
-| Approval race | High | PostgreSQL `xmin` concurrency token and conflict response | Fixed | entity mapping/service |
-| Real authentication absent | Medium | Deliberately simulated only for MVP | Deferred | README |
-| No production telemetry | Low | Standard application logging remains enabled | Deferred | `appsettings.json` |
+| A real database password was present in tracked configuration | High | Replaced with `CHANGE_ME`; README requires an environment variable/local secret | Fixed | `appsettings.json`, README, repository scan |
+| Duplicate create can race | High | Unique `ClientRequestId` index plus PostgreSQL unique-violation recovery | Fixed | context, migration, `RequestService` |
+| Two approvers can act on stale data | High | PostgreSQL `xmin` token; API returns HTTP 409 for stale version | Fixed | entity mapping, service, test |
+| State update and audit event could diverge | High | Save both changes in one database transaction | Fixed | `RequestService` |
+| Header authentication is forgeable | Medium | Deliberately limited to local MVP; production needs real authentication | Deferred | README |
+| Tests do not use PostgreSQL | Medium | Documented limitation; `xmin` needs PostgreSQL integration testing | Deferred | PLAN.md, tests |
+| Required Git tags are absent | High | Candidate must create accurate tags after reviewing history and test result | Open | `git tag --list` audit |
 
-Known limitation: automated integration tests require a PostgreSQL test database to exercise the provider's physical `xmin` update behavior; the included tests validate service-level stale-version handling.
+## Verification evidence
+
+- `dotnet test AccessRequestHub.slnx --no-restore`: passed, 4 tests, 0 failures.
+- `dotnet build AccessRequestHub.slnx --no-restore`: passed.
+- Tracked-file scan found no real credential after the configuration fix.
+
+## Known limitations and deferred work
+
+- No SSO/OIDC, notifications, rate limiting, or production observability stack; outside assessment scope.
+- The frontend intentionally has no advanced search, pagination, or analytics.
+- PostgreSQL is required locally to run migrations and the browser demo.

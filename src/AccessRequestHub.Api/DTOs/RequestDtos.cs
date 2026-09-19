@@ -1,6 +1,6 @@
 using AccessRequestHub.Api.Models.Enums;
 
-namespace AccessRequestHub.Api.Models.DTOs;
+namespace AccessRequestHub.Api.DTOs;
 public class CreateRequestDto
 {
     public string ClientRequestId { get; set; } = string.Empty;

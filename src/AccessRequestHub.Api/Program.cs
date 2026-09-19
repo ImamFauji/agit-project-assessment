@@ -7,13 +7,13 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddDbContext<DataContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<IRequestRepository, RequestRepository>();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IRequestService, RequestService>();
-builder.Services.AddControllers().AddJsonOptions(options =>
+builder.Services.AddControllersWithViews().AddJsonOptions(options =>
     options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -45,7 +45,7 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<DataContext>();
     await DbSeeder.SeedAsync(dbContext);
 }
 if (app.Environment.IsDevelopment())
@@ -54,13 +54,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Access Request Hub API v1");
-    c.RoutePrefix = "swagger";
+        c.RoutePrefix = "swagger";
     });
 }
 
 app.UseHttpsRedirection();
-app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapGet("/index.html", () => Results.Redirect("/"));
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
 app.MapControllers();
 
 app.Run();

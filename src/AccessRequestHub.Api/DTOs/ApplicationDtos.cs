@@ -1,4 +1,4 @@
-namespace AccessRequestHub.Api.Models.DTOs;
+namespace AccessRequestHub.Api.DTOs;
 
 public sealed class ApplicationResponse
 {

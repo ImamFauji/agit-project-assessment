@@ -1,6 +1,6 @@
 using AccessRequestHub.Api.Data;
 using AccessRequestHub.Api.Exceptions;
-using AccessRequestHub.Api.Models.DTOs;
+using AccessRequestHub.Api.DTOs;
 using AccessRequestHub.Api.Models.Entities;
 using AccessRequestHub.Api.Models.Enums;
 using AccessRequestHub.Api.Repositories.Interfaces;
@@ -9,16 +9,14 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
 namespace AccessRequestHub.Api.Services;
+
 public class RequestService : IRequestService
 {
     private readonly IRequestRepository _requestRepo;
     private readonly IAuditRepository _auditRepo;
-    private readonly AppDbContext _context;
+    private readonly DataContext _context;
 
-    public RequestService(
-        IRequestRepository requestRepo,
-        IAuditRepository auditRepo,
-        AppDbContext context)
+    public RequestService(IRequestRepository requestRepo, IAuditRepository auditRepo, DataContext context)
     {
         _requestRepo = requestRepo;
         _auditRepo = auditRepo;
@@ -29,6 +27,7 @@ public class RequestService : IRequestService
         CreateRequestDto dto)
     {
         var requester = await GetUserOrThrowAsync(requesterEmail);
+
         if (requester.Role != UserRole.Requester)
             throw new ForbiddenException("Only a user with the Requester role can create an access request.");
 
@@ -37,15 +36,19 @@ public class RequestService : IRequestService
 
         if (string.IsNullOrWhiteSpace(dto.Justification))
             throw new BadRequestException("Justification is required.");
+
         if (!Enum.IsDefined(dto.Environment) || !Enum.IsDefined(dto.AccessLevel))
             throw new BadRequestException("Environment and AccessLevel must contain valid values.");
+
         var existing = await _requestRepo.GetByClientRequestIdAsync(dto.ClientRequestId);
         if (existing is not null)
         {
             return (MapToResponse(existing), WasCreated: false);
         }
+
         var application = await _context.Applications.FindAsync(dto.ApplicationId)
             ?? throw new NotFoundException($"Application with ID '{dto.ApplicationId}' not found.");
+
         var newRequest = new AccessRequest
         {
             Id = Guid.NewGuid(),
@@ -55,7 +58,7 @@ public class RequestService : IRequestService
             Environment = dto.Environment,
             AccessLevel = dto.AccessLevel,
             Justification = dto.Justification,
-            Status = RequestStatus.PendingManager,   // Business Rule: all requests start here
+            Status = RequestStatus.PendingManager,
             PolicyVersion = "v1",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -63,6 +66,7 @@ public class RequestService : IRequestService
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
         await _requestRepo.AddAsync(newRequest);
+
         var auditEvent = new AuditEvent
         {
             Id = Guid.NewGuid(),
@@ -70,7 +74,7 @@ public class RequestService : IRequestService
             Timestamp = DateTime.UtcNow,
             ActorEmail = requester.Email,
             Action = "Created",
-            OldStatus = null,                        // No previous status for creation event
+            OldStatus = null,                        
             NewStatus = RequestStatus.PendingManager,
             Reason = null
         };
@@ -78,7 +82,6 @@ public class RequestService : IRequestService
         await _auditRepo.AddAsync(auditEvent);
         try
         {
-            // One SaveChanges call commits both the request and its first audit event.
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
         }
@@ -86,11 +89,12 @@ public class RequestService : IRequestService
         {
             await transaction.RollbackAsync();
             _context.ChangeTracker.Clear();
+
             var duplicate = await _requestRepo.GetByClientRequestIdAsync(dto.ClientRequestId);
             if (duplicate is not null)
                 return (MapToResponse(duplicate), WasCreated: false);
 
-            throw;
+            throw new InvalidOperationException("Failed to create request and no duplicate found.");
         }
         newRequest.Application = application;
 
@@ -102,11 +106,11 @@ public class RequestService : IRequestService
 
         IEnumerable<AccessRequest> requests = actor.Role switch
         {
-            UserRole.Requester    => await _requestRepo.ListByRequesterAsync(actorEmail),
-            UserRole.Manager      => await _requestRepo.ListPendingForManagerAsync(actorEmail),
-            UserRole.SystemOwner  => await _requestRepo.ListPendingForSystemOwnerAsync(actorEmail),
-            UserRole.Auditor      => await _requestRepo.ListAllAsync(),
-            _                     => throw new ForbiddenException("Unknown user role.")
+            UserRole.Requester => await _requestRepo.ListByRequesterAsync(actorEmail),
+            UserRole.Manager => await _requestRepo.ListPendingForManagerAsync(actorEmail),
+            UserRole.SystemOwner => await _requestRepo.ListPendingForSystemOwnerAsync(actorEmail),
+            UserRole.Auditor => await _requestRepo.ListAllAsync(),
+            _ => throw new ForbiddenException("Unknown user role.")
         };
 
         return requests.Select(MapToResponse);
@@ -119,10 +123,8 @@ public class RequestService : IRequestService
 
         var mayRead = actor.Role == UserRole.Auditor
             || (actor.Role == UserRole.Requester && SameEmail(request.RequesterEmail, actor.Email))
-            || (actor.Role == UserRole.Manager
-                && await IsDirectManagerAsync(actor.Email, request.RequesterEmail))
-            || (actor.Role == UserRole.SystemOwner
-                && SameEmail(request.Application.OwnerEmail, actor.Email));
+            || (actor.Role == UserRole.Manager && await IsDirectManagerAsync(actor.Email, request.RequesterEmail))
+            || (actor.Role == UserRole.SystemOwner && SameEmail(request.Application.OwnerEmail, actor.Email));
 
         if (!mayRead)
             throw new ForbiddenException("You are not allowed to view this request.");
@@ -135,26 +137,13 @@ public class RequestService : IRequestService
         ApproveRequestDto dto)
     {
         var actor = await GetUserOrThrowAsync(actorEmail);
-        var request = await _requestRepo.GetByIdAsync(requestId)
-            ?? throw new NotFoundException($"Request '{requestId}' not found.");
-        if (request.Status is RequestStatus.Approved or RequestStatus.Rejected)
-            throw new BadRequestException(
-                $"Request is already in a terminal state ({request.Status}). No further transitions allowed.");
-        if (request.RequesterEmail.Equals(actorEmail, StringComparison.OrdinalIgnoreCase))
-            throw new ForbiddenException("You cannot approve your own request.");
-        if (request.Version != dto.Version)
-            throw new ConcurrencyException(
-                "The request has been modified by another process. Please reload and try again.");
+        var request = await _requestRepo.GetByIdAsync(requestId) ?? throw new NotFoundException($"Request '{requestId}' not found.");
         string action;
-        RequestStatus oldStatus = request.Status;
+        RequestStatus oldStatus = await EnsureActorCanProcessAsync(actor, request, dto.Version);
         RequestStatus newStatus;
 
-        if (request.Status == RequestStatus.PendingManager)
+        if (oldStatus == RequestStatus.PendingManager)
         {
-            var requester = await GetUserOrThrowAsync(request.RequesterEmail);
-            if (actor.Role != UserRole.Manager || !SameEmail(requester.ManagerEmail, actor.Email))
-                throw new ForbiddenException(
-                    "Only the requester's direct manager can approve a request in PendingManager state.");
             bool isHighRisk = IsHighRisk(request);
             if (isHighRisk)
             {
@@ -167,12 +156,8 @@ public class RequestService : IRequestService
                 action = "ApprovedByManager";
             }
         }
-        else if (request.Status == RequestStatus.PendingSystemOwner)
+        else if (oldStatus == RequestStatus.PendingSystemOwner)
         {
-            if (actor.Role != UserRole.SystemOwner || !SameEmail(request.Application.OwnerEmail, actor.Email))
-                throw new ForbiddenException(
-                    "Only the application's System Owner can approve a request in PendingSystemOwner state.");
-
             newStatus = RequestStatus.Approved;
             action = "ApprovedBySystemOwner";
         }
@@ -182,7 +167,7 @@ public class RequestService : IRequestService
         }
         request.Status = newStatus;
         request.UpdatedAt = DateTime.UtcNow;
-        _requestRepo.Update(request);
+
         await _auditRepo.AddAsync(new AuditEvent
         {
             Id = Guid.NewGuid(),
@@ -209,30 +194,15 @@ public class RequestService : IRequestService
         var actor = await GetUserOrThrowAsync(actorEmail);
         var request = await _requestRepo.GetByIdAsync(requestId)
             ?? throw new NotFoundException($"Request '{requestId}' not found.");
-        if (request.Status is RequestStatus.Approved or RequestStatus.Rejected)
-            throw new BadRequestException(
-                $"Request is already in a terminal state ({request.Status}). No further transitions allowed.");
-        if (request.RequesterEmail.Equals(actorEmail, StringComparison.OrdinalIgnoreCase))
-            throw new ForbiddenException("You cannot reject your own request.");
-        if (request.Version != dto.Version)
-            throw new ConcurrencyException(
-                "The request has been modified by another process. Please reload and try again.");
         string action;
-        RequestStatus oldStatus = request.Status;
+        RequestStatus oldStatus = await EnsureActorCanProcessAsync(actor, request, dto.Version);
 
-        if (request.Status == RequestStatus.PendingManager)
+        if (oldStatus == RequestStatus.PendingManager)
         {
-            var requester = await GetUserOrThrowAsync(request.RequesterEmail);
-            if (actor.Role != UserRole.Manager || !SameEmail(requester.ManagerEmail, actor.Email))
-                throw new ForbiddenException(
-                    "Only the requester's direct manager can reject a request in PendingManager state.");
             action = "RejectedByManager";
         }
-        else if (request.Status == RequestStatus.PendingSystemOwner)
+        else if (oldStatus == RequestStatus.PendingSystemOwner)
         {
-            if (actor.Role != UserRole.SystemOwner || !SameEmail(request.Application.OwnerEmail, actor.Email))
-                throw new ForbiddenException(
-                    "Only the application's System Owner can reject a request in PendingSystemOwner state.");
             action = "RejectedBySystemOwner";
         }
         else
@@ -241,7 +211,6 @@ public class RequestService : IRequestService
         }
         request.Status = RequestStatus.Rejected;
         request.UpdatedAt = DateTime.UtcNow;
-        _requestRepo.Update(request);
         await _auditRepo.AddAsync(new AuditEvent
         {
             Id = Guid.NewGuid(),
@@ -257,20 +226,61 @@ public class RequestService : IRequestService
 
         return MapToResponse(request);
     }
+
+    #region Helper Methods
+
     private static bool IsHighRisk(AccessRequest request) =>
-        request.Environment == AppEnvironment.Production
-        || request.AccessLevel == AccessLevel.Admin;
+        request.Environment == AppEnvironment.Production || request.AccessLevel == AccessLevel.Admin;
+
     private async Task<User> GetUserOrThrowAsync(string email)
     {
         var user = await _context.Users.FindAsync(email)
             ?? throw new NotFoundException($"User '{email}' not found. Ensure the x-user-email header is a valid seeded user.");
         return user;
     }
+
     private async Task<bool> IsDirectManagerAsync(string managerEmail, string requesterEmail)
     {
         var requester = await GetUserOrThrowAsync(requesterEmail);
         return SameEmail(requester.ManagerEmail, managerEmail);
     }
+
+    private async Task<RequestStatus> EnsureActorCanProcessAsync(
+        User actor,
+        AccessRequest request,
+        uint expectedVersion)
+    {
+        if (request.Status is RequestStatus.Approved or RequestStatus.Rejected)
+            throw new BadRequestException(
+                $"Request is already in a terminal state ({request.Status}). No further transitions allowed.");
+                
+        if (SameEmail(request.RequesterEmail, actor.Email))
+            throw new ForbiddenException("You cannot process your own request.");
+
+        if (request.Version != expectedVersion)
+            throw new ConcurrencyException(
+                "The request has been modified by another process. Please reload and try again.");
+
+        if (request.Status == RequestStatus.PendingManager)
+        {
+            if (actor.Role != UserRole.Manager || !await IsDirectManagerAsync(actor.Email, request.RequesterEmail))
+                throw new ForbiddenException(
+                    "Only the requester's direct manager can process a request in PendingManager state.");
+        }
+        else if (request.Status == RequestStatus.PendingSystemOwner)
+        {
+            if (actor.Role != UserRole.SystemOwner || !SameEmail(request.Application.OwnerEmail, actor.Email))
+                throw new ForbiddenException(
+                    "Only the application's System Owner can process a request in PendingSystemOwner state.");
+        }
+        else
+        {
+            throw new BadRequestException($"Request cannot be processed from status '{request.Status}'.");
+        }
+
+        return request.Status;
+    }
+
     private async Task SaveTransitionWithAuditAsync()
     {
         try
@@ -286,10 +296,16 @@ public class RequestService : IRequestService
                 "Please reload the latest version and retry.");
         }
     }
+
     private static bool IsUniqueConstraintViolation(DbUpdateException exception) =>
-        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+        exception.InnerException is PostgresException 
+        { 
+            SqlState: PostgresErrorCodes.UniqueViolation 
+        };
+
     private static bool SameEmail(string? left, string? right) =>
         string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
     private static AccessRequestResponse MapToResponse(AccessRequest r) => new()
     {
         Id = r.Id,
@@ -302,6 +318,7 @@ public class RequestService : IRequestService
         Status = r.Status,
         PolicyVersion = r.PolicyVersion,
         Version = r.Version,
+        // Determine if the request is high risk based on its environment and access level
         IsHighRisk = r.Environment == AppEnvironment.Production || r.AccessLevel == AccessLevel.Admin,
         CreatedAt = r.CreatedAt,
         UpdatedAt = r.UpdatedAt
@@ -318,6 +335,7 @@ public class RequestService : IRequestService
         Status = r.Status,
         PolicyVersion = r.PolicyVersion,
         Version = r.Version,
+        // Determine if the request is high risk based on its environment and access level
         IsHighRisk = r.Environment == AppEnvironment.Production || r.AccessLevel == AccessLevel.Admin,
         CreatedAt = r.CreatedAt,
         UpdatedAt = r.UpdatedAt,
@@ -334,4 +352,6 @@ public class RequestService : IRequestService
                 Reason = e.Reason
             })
     };
+
+    #endregion
 }

@@ -1,4 +1,4 @@
-using AccessRequestHub.Api.Models.DTOs;
+using AccessRequestHub.Api.DTOs;
 using AccessRequestHub.Api.Repositories.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 

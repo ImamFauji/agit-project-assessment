@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace AccessRequestHub.Api.Data;
 public static class DbSeeder
 {
-    public static async Task SeedAsync(AppDbContext context)
+    public static async Task SeedAsync(DataContext context)
     {
         await context.Database.MigrateAsync();
         if (await context.Applications.AnyAsync())
@@ -13,7 +13,7 @@ public static class DbSeeder
         var crmId = Guid.NewGuid();
         var financeId = Guid.NewGuid();
 
-        var applications = new List<Models.Entities.Application>
+        var applications = new List<Application>
         {
             new()
             {

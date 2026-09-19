@@ -1,6 +1,6 @@
 using AccessRequestHub.Api.Models.Enums;
 
-namespace AccessRequestHub.Api.Models.DTOs;
+namespace AccessRequestHub.Api.DTOs;
 public class AccessRequestResponse
 {
     public Guid Id { get; set; }

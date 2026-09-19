@@ -5,19 +5,20 @@ using AccessRequestHub.Api.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace AccessRequestHub.Api.Repositories;
+
 public class RequestRepository : IRequestRepository
 {
-    private readonly AppDbContext _context;
+    private readonly DataContext _context;
 
-    public RequestRepository(AppDbContext context)
+    public RequestRepository(DataContext context)
     {
         _context = context;
     }
     public async Task<AccessRequest?> GetByIdAsync(Guid id)
     {
         return await _context.AccessRequests
-            .Include(r => r.Application)           // Load app name + owner for auth checks
-            .Include(r => r.AuditEvents)            // Load audit trail for detail view
+            .Include(r => r.Application)           
+            .Include(r => r.AuditEvents)            
             .FirstOrDefaultAsync(r => r.Id == id);
     }
     public async Task<AccessRequest?> GetByClientRequestIdAsync(string clientRequestId)
@@ -58,6 +59,7 @@ public class RequestRepository : IRequestRepository
     public async Task<IEnumerable<AccessRequest>> ListAllAsync()
     {
         return await _context.AccessRequests
+            .AsNoTracking()
             .Include(r => r.Application)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
@@ -65,9 +67,5 @@ public class RequestRepository : IRequestRepository
     public async Task AddAsync(AccessRequest request)
     {
         await _context.AccessRequests.AddAsync(request);
-    }
-    public void Update(AccessRequest request)
-    {
-        _context.AccessRequests.Update(request);
     }
 }

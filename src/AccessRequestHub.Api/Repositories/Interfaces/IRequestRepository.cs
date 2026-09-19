@@ -10,5 +10,4 @@ public interface IRequestRepository
     Task<IEnumerable<AccessRequest>> ListPendingForSystemOwnerAsync(string ownerEmail);
     Task<IEnumerable<AccessRequest>> ListAllAsync();
     Task AddAsync(AccessRequest request);
-    void Update(AccessRequest request);
 }

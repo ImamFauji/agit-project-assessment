@@ -1,5 +1,4 @@
-using AccessRequestHub.Api.Models.DTOs;
-using AccessRequestHub.Api.Models.Entities;
+using AccessRequestHub.Api.DTOs;
 
 namespace AccessRequestHub.Api.Services.Interfaces;
 public interface IRequestService

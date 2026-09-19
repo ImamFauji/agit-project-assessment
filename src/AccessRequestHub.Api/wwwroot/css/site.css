@@ -1,0 +1,115 @@
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: #172033;
+  background: #f4f7fb;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 1080px;
+  margin: auto;
+  padding: 2rem 1rem 4rem;
+}
+header,
+section {
+  background: white;
+  border: 1px solid #dce3ee;
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+header {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+}
+h1,
+h2 {
+  margin-top: 0;
+}
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+form,
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.9rem;
+}
+textarea {
+  min-height: 5rem;
+}
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  padding: 0.6rem;
+  border: 1px solid #b7c3d4;
+  border-radius: 6px;
+}
+button {
+  cursor: pointer;
+  background: #1455b8;
+  color: white;
+  border: 0;
+  font-weight: 700;
+}
+button.secondary {
+  background: #5a6575;
+}
+button.reject {
+  background: #b42318;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  padding: 0.7rem;
+  border-bottom: 1px solid #e4eaf2;
+  text-align: left;
+}
+.status,
+#message {
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+}
+.PendingManager,
+.PendingSystemOwner {
+  background: #fff1c2;
+}
+.Approved {
+  background: #d7f4e3;
+}
+.Rejected,
+.error {
+  background: #ffe0dd;
+}
+.hidden {
+  display: none;
+}
+#message {
+  margin: 1rem 0;
+}
+#detail dt {
+  font-weight: 700;
+}
+#detail dd {
+  margin: 0.2rem 0 1rem;
+}
+@media (max-width: 650px) {
+  table {
+    font-size: 0.85rem;
+  }
+  th:nth-child(2),
+  td:nth-child(2) {
+    display: none;
+  }
+}

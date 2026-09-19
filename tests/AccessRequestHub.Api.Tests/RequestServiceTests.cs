@@ -1,6 +1,6 @@
 using AccessRequestHub.Api.Data;
 using AccessRequestHub.Api.Exceptions;
-using AccessRequestHub.Api.Models.DTOs;
+using AccessRequestHub.Api.DTOs;
 using AccessRequestHub.Api.Models.Entities;
 using AccessRequestHub.Api.Models.Enums;
 using AccessRequestHub.Api.Repositories;
@@ -15,11 +15,11 @@ public sealed class RequestServiceTests
 {
     private static async Task<(RequestService Service, Guid CrmId)> CreateSutAsync()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
+        var options = new DbContextOptionsBuilder<DataContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        var db = new AppDbContext(options);
+        var db = new DataContext(options);
         var crmId = Guid.NewGuid();
         db.Users.AddRange(
             new User { Email = "alice@example.local", Name = "Alice", Role = UserRole.Requester, ManagerEmail = "bob@example.local" },
